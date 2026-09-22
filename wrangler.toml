@@ -1,0 +1,19 @@
+name = "game-chat"
+main = "worker/src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "public"
+
+[durable_objects]
+bindings = [
+  { name = "ROOM_DO", class_name = "RoomDurableObject" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDurableObject"]
+
+[vars]
+ENVIRONMENT = "production"

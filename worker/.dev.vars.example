@@ -1,0 +1,4 @@
+﻿# Cloudflare Realtime (Calls) credentials for local testing
+CALLS_APP_ID=your_calls_app_id_here
+CALLS_APP_SECRET=your_calls_app_secret_here
+ENVIRONMENT=development

@@ -1,0 +1,10 @@
+{
+  "name": "gamechat-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GameChat root workspace for Cloudflare deployment",
+  "scripts": {
+    "build": "cd worker && npm install && npm run build",
+    "deploy": "cd worker && npx wrangler deploy"
+  }
+}

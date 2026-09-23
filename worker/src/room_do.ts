@@ -245,8 +245,28 @@ export class RoomDurableObject {
           senderName: currentData.username,
           soundId: payload.soundId,
           soundName: payload.soundName || payload.soundId,
+          audioData: (payload as any).audioData,
+          audioFormat: (payload as any).audioFormat,
           timestamp: Date.now(),
         });
+        break;
+      }
+
+      case 'soundboard-sync': {
+        if (!currentData || !payload.soundId) return;
+        this.broadcast(
+          {
+            type: 'soundboard-synced',
+            senderId: currentData.id,
+            senderName: currentData.username,
+            soundId: payload.soundId,
+            soundName: payload.soundName || payload.soundId,
+            audioData: (payload as any).audioData,
+            audioFormat: (payload as any).audioFormat,
+            timestamp: Date.now(),
+          },
+          ws
+        );
         break;
       }
 

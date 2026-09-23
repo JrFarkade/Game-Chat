@@ -16,6 +16,7 @@ class WebRtcService extends ChangeNotifier {
 
   // Remote streams mapped by peer ID
   final Map<String, MediaStream> _remoteStreams = {};
+  final Map<String, List<MediaStreamTrack>> _remoteAudioTracks = {};
   final Map<String, RTCPeerConnection> _peerConnections = {};
   final Map<String, UserPeer> _peers = {};
 
@@ -23,6 +24,34 @@ class WebRtcService extends ChangeNotifier {
   bool _isDeafened = false;
   bool _isPttEnabled = false;
   bool _isPttPressed = false;
+
+  void _applyAudioTrackSettings(String? peerSocketId, MediaStreamTrack track) {
+    if (track.kind != 'audio') return;
+    try {
+      final peer = peerSocketId != null ? _peers[peerSocketId] : null;
+      final bool isLocallyMuted = peer?.isLocallyMuted ?? false;
+      final bool shouldSilence = _isDeafened || isLocallyMuted;
+      final double volume = shouldSilence ? 0.0 : (peer?.volume ?? 1.0);
+
+      track.enabled = !shouldSilence;
+      Helper.setVolume(volume, track);
+    } catch (e) {
+      print('[WebRTC] Error applying audio track settings: $e');
+    }
+  }
+
+  void _applyAllRemoteAudioSettings() {
+    for (final entry in _remoteAudioTracks.entries) {
+      for (final track in entry.value) {
+        _applyAudioTrackSettings(entry.key, track);
+      }
+    }
+    for (final stream in _remoteStreams.values) {
+      for (final track in stream.getAudioTracks()) {
+        _applyAudioTrackSettings(null, track);
+      }
+    }
+  }
   bool _isLocallySpeaking = false;
   String? _errorMessage;
 
@@ -159,6 +188,7 @@ class WebRtcService extends ChangeNotifier {
       _callsPc!.onTrack = (event) {
         if (event.track.kind == 'audio') {
           print('[WebRTC] Received remote audio track from Cloudflare Calls');
+          _remoteAudioTracks.putIfAbsent('_calls_sfu', () => []).add(event.track);
           if (event.streams.isNotEmpty) {
             final stream = event.streams[0];
             // Assign to any pending peer without stream
@@ -169,6 +199,7 @@ class WebRtcService extends ChangeNotifier {
               }
             }
           }
+          _applyAudioTrackSettings(null, event.track);
         }
       };
 
@@ -374,10 +405,12 @@ class WebRtcService extends ChangeNotifier {
 
     pc.onTrack = (event) {
       if (event.track.kind == 'audio') {
+        _remoteAudioTracks.putIfAbsent(peerSocketId, () => []).add(event.track);
         if (event.streams.isNotEmpty) {
           _remoteStreams[peerSocketId] = event.streams[0];
-          notifyListeners();
         }
+        _applyAudioTrackSettings(peerSocketId, event.track);
+        notifyListeners();
       }
     };
 
@@ -461,6 +494,7 @@ class WebRtcService extends ChangeNotifier {
   void _handleUserLeft(String socketId) {
     _peers.remove(socketId);
     _closePeerConnection(socketId);
+    _remoteAudioTracks.remove(socketId);
     notifyListeners();
   }
 
@@ -488,11 +522,7 @@ class WebRtcService extends ChangeNotifier {
 
   void toggleDeafen() {
     _isDeafened = !_isDeafened;
-    for (final stream in _remoteStreams.values) {
-      for (final track in stream.getAudioTracks()) {
-        track.enabled = !_isDeafened;
-      }
-    }
+    _applyAllRemoteAudioSettings();
     _signaling.sendStateChange(isMuted: _micState == MicState.muted, isDeafened: _isDeafened);
     notifyListeners();
   }
@@ -525,10 +555,16 @@ class WebRtcService extends ChangeNotifier {
     if (peer == null) return;
 
     peer.isLocallyMuted = !peer.isLocallyMuted;
+    final tracks = _remoteAudioTracks[socketId];
+    if (tracks != null) {
+      for (final track in tracks) {
+        _applyAudioTrackSettings(socketId, track);
+      }
+    }
     final stream = _remoteStreams[socketId];
     if (stream != null) {
       for (final track in stream.getAudioTracks()) {
-        track.enabled = !peer.isLocallyMuted;
+        _applyAudioTrackSettings(socketId, track);
       }
     }
     notifyListeners();
@@ -538,6 +574,18 @@ class WebRtcService extends ChangeNotifier {
     final peer = _peers[socketId];
     if (peer == null) return;
     peer.volume = volume;
+    final tracks = _remoteAudioTracks[socketId];
+    if (tracks != null) {
+      for (final track in tracks) {
+        _applyAudioTrackSettings(socketId, track);
+      }
+    }
+    final stream = _remoteStreams[socketId];
+    if (stream != null) {
+      for (final track in stream.getAudioTracks()) {
+        _applyAudioTrackSettings(socketId, track);
+      }
+    }
     notifyListeners();
   }
 
@@ -627,6 +675,8 @@ class WebRtcService extends ChangeNotifier {
     }
 
     _peers.clear();
+    _remoteAudioTracks.clear();
+    _isDeafened = false;
     _micState = MicState.on;
     _isLocallySpeaking = false;
     notifyListeners();

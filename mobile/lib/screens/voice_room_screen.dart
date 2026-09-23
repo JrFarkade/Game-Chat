@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/user.dart';
+import '../services/audio_service.dart';
 import '../services/foreground_service.dart';
 import '../services/signaling_service.dart';
 import '../services/webrtc_service.dart';
@@ -59,6 +60,7 @@ class _VoiceRoomScreenState extends State<VoiceRoomScreen> {
     if (mounted) {
       context.read<WebRtcService>().leaveAndCleanUp();
       context.read<SignalingService>().leaveRoom();
+      context.read<AudioService>().clearRoomSounds();
       Navigator.popUntil(context, (route) => route.isFirst);
     }
   }

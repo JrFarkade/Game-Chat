@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
@@ -7,14 +8,20 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/sound_clip.dart';
 import 'signaling_service.dart';
+import 'webrtc_service.dart';
 
 class AudioService extends ChangeNotifier {
   final SignalingService _signaling;
+  WebRtcService? _webrtc;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   double _soundboardVolume = 0.8;
   double _voiceVolume = 1.0;
   String? _currentlyPlayingId;
+
+  StreamSubscription? _playerCompleteSub;
+  StreamSubscription? _soundboardPlayedSub;
+  StreamSubscription? _soundboardSyncedSub;
 
   // Built-in soundboard presets (28 sounds)
   final List<SoundClip> _presetClips = [
@@ -49,14 +56,19 @@ class AudioService extends ChangeNotifier {
   ];
 
   final List<SoundClip> _customClips = [];
+  final List<SoundClip> _roomCustomClips = [];
 
-  AudioService(this._signaling) {
+  AudioService(this._signaling, [this._webrtc]) {
     _loadCustomClips();
     _listenToSignalingSoundboard();
-    _audioPlayer.onPlayerComplete.listen((_) {
+    _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
       _currentlyPlayingId = null;
       notifyListeners();
     });
+  }
+
+  void updateWebRtc(WebRtcService webrtc) {
+    _webrtc = webrtc;
   }
 
   double get soundboardVolume => _soundboardVolume;
@@ -64,7 +76,18 @@ class AudioService extends ChangeNotifier {
   String? get currentlyPlayingId => _currentlyPlayingId;
   List<SoundClip> get presetClips => _presetClips;
   List<SoundClip> get customClips => _customClips;
-  List<SoundClip> get allClips => [..._presetClips, ..._customClips];
+  List<SoundClip> get roomCustomClips => _roomCustomClips;
+
+  List<SoundClip> get allClips {
+    final seen = <String>{};
+    final result = <SoundClip>[];
+    for (final c in [..._presetClips, ..._customClips, ..._roomCustomClips]) {
+      if (seen.add(c.id)) {
+        result.add(c);
+      }
+    }
+    return result;
+  }
 
   void setSoundboardVolume(double volume) {
     _soundboardVolume = volume.clamp(0.0, 1.0);
@@ -78,17 +101,86 @@ class AudioService extends ChangeNotifier {
   }
 
   void _listenToSignalingSoundboard() {
-    _signaling.onSoundboardPlayed.listen((data) {
+    _soundboardPlayedSub = _signaling.onSoundboardPlayed.listen((data) async {
       final soundId = data['soundId'] as String?;
+      final soundName = (data['soundName'] ?? soundId ?? 'Custom Sound') as String;
       final senderSocketId = (data['senderSocketId'] ?? data['senderId']) as String?;
+      final audioData = data['audioData'] as String?;
+      final audioFormat = ((data['audioFormat'] as String?) ?? 'mp3').toLowerCase();
 
       // Don't replay if we were the sender (we already played it immediately for zero delay)
       if (senderSocketId == _signaling.socketId) return;
 
-      if (soundId != null) {
-        _playClipByIdLocally(soundId);
+      SoundClip? clipToPlay;
+
+      if (audioData != null && audioData.isNotEmpty && soundId != null) {
+        clipToPlay = await _cacheReceivedAudio(soundId, soundName, audioData, audioFormat);
+      } else if (soundId != null) {
+        clipToPlay = allClips.firstWhere(
+          (c) => c.id == soundId,
+          orElse: () => _presetClips.first,
+        );
+      }
+
+      // CRITICAL: DEAFEN CHECK
+      // If user is deafened, suppress incoming soundboard audio playback!
+      if (_webrtc?.isDeafened == true) {
+        print('[AudioService] Remote sound suppressed because user is DEAFENED');
+        return;
+      }
+
+      if (clipToPlay != null) {
+        _currentlyPlayingId = clipToPlay.id;
+        notifyListeners();
+        await _playClipLocally(clipToPlay);
       }
     });
+
+    _soundboardSyncedSub = _signaling.onSoundboardSynced.listen((data) async {
+      final soundId = data['soundId'] as String?;
+      final soundName = (data['soundName'] ?? soundId ?? 'Custom Sound') as String;
+      final audioData = data['audioData'] as String?;
+      final audioFormat = ((data['audioFormat'] as String?) ?? 'mp3').toLowerCase();
+
+      if (audioData != null && audioData.isNotEmpty && soundId != null) {
+        await _cacheReceivedAudio(soundId, soundName, audioData, audioFormat);
+      }
+    });
+  }
+
+  Future<SoundClip> _cacheReceivedAudio(String soundId, String soundName, String base64Data, String ext) async {
+    try {
+      final existing = _roomCustomClips.where((c) => c.id == soundId);
+      if (existing.isNotEmpty && existing.first.filePath != null && File(existing.first.filePath!).existsSync()) {
+        return existing.first;
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final roomDir = Directory('${tempDir.path}/room_sounds');
+      if (!roomDir.existsSync()) {
+        roomDir.createSync(recursive: true);
+      }
+
+      final filePath = '${roomDir.path}/$soundId.$ext';
+      final file = File(filePath);
+      final bytes = base64Decode(base64Data);
+      await file.writeAsBytes(bytes, flush: true);
+
+      final clip = SoundClip(
+        id: soundId,
+        name: soundName,
+        filePath: filePath,
+        isCustom: true,
+      );
+
+      _roomCustomClips.removeWhere((c) => c.id == soundId);
+      _roomCustomClips.add(clip);
+      notifyListeners();
+      return clip;
+    } catch (e) {
+      print('[AudioService] Error caching received sound: $e');
+      return SoundClip(id: soundId, name: soundName, isCustom: true);
+    }
   }
 
   /// Triggers sound: plays locally AND sends to everyone in room via WebRTC signaling
@@ -96,8 +188,30 @@ class AudioService extends ChangeNotifier {
     _currentlyPlayingId = clip.id;
     notifyListeners();
 
+    String? audioData;
+    String? audioFormat;
+
+    if (clip.isCustom && clip.filePath != null) {
+      try {
+        final file = File(clip.filePath!);
+        if (file.existsSync()) {
+          final bytes = await file.readAsBytes();
+          audioData = base64Encode(bytes);
+          final parts = clip.filePath!.split('.');
+          audioFormat = parts.length > 1 ? parts.last.toLowerCase() : 'mp3';
+        }
+      } catch (e) {
+        print('[AudioService] Error reading custom audio file: $e');
+      }
+    }
+
     // Broadcast to room
-    _signaling.broadcastSoundboardPlay(clip.id, clip.name);
+    _signaling.broadcastSoundboardPlay(
+      clip.id,
+      clip.name,
+      audioData: audioData,
+      audioFormat: audioFormat,
+    );
 
     // Play locally
     await _playClipLocally(clip);
@@ -120,17 +234,22 @@ class AudioService extends ChangeNotifier {
     }
   }
 
-  Future<void> _playClipByIdLocally(String soundId) async {
-    final clip = allClips.firstWhere(
-      (c) => c.id == soundId,
-      orElse: () => _presetClips.first,
-    );
-    await _playClipLocally(clip);
-  }
-
   Future<void> stopCurrentSound() async {
     await _audioPlayer.stop();
     _currentlyPlayingId = null;
+    notifyListeners();
+  }
+
+  void clearRoomSounds() {
+    _roomCustomClips.clear();
+    try {
+      getTemporaryDirectory().then((tempDir) {
+        final roomDir = Directory('${tempDir.path}/room_sounds');
+        if (roomDir.existsSync()) {
+          roomDir.deleteSync(recursive: true);
+        }
+      }).catchError((_) {});
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -193,6 +312,18 @@ class AudioService extends ChangeNotifier {
         _customClips.add(newClip);
         await _saveCustomClips();
         notifyListeners();
+
+        // If currently in a room, sync the new custom sound to room participants
+        if (_signaling.currentRoomCode != null) {
+          try {
+            final bytes = await File(targetPath).readAsBytes();
+            final base64Audio = base64Encode(bytes);
+            _signaling.broadcastSoundboardSync(newClip.id, newClip.name, base64Audio, ext);
+          } catch (e) {
+            print('[AudioService] Error syncing custom sound to room: $e');
+          }
+        }
+
         return true;
       }
     } catch (e) {
@@ -236,6 +367,9 @@ class AudioService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _playerCompleteSub?.cancel();
+    _soundboardPlayedSub?.cancel();
+    _soundboardSyncedSub?.cancel();
     _audioPlayer.dispose();
     super.dispose();
   }

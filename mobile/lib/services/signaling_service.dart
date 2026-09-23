@@ -34,6 +34,7 @@ class SignalingService extends ChangeNotifier {
   final _onUserStateChangedController = StreamController<Map<String, dynamic>>.broadcast();
   final _onUserSpeakingChangedController = StreamController<Map<String, dynamic>>.broadcast();
   final _onSoundboardPlayedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _onSoundboardSyncedController = StreamController<Map<String, dynamic>>.broadcast();
   final _onCallsTrackUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   final _onKickedController = StreamController<String>.broadcast();
 
@@ -45,6 +46,7 @@ class SignalingService extends ChangeNotifier {
   Stream<Map<String, dynamic>> get onUserStateChanged => _onUserStateChangedController.stream;
   Stream<Map<String, dynamic>> get onUserSpeakingChanged => _onUserSpeakingChangedController.stream;
   Stream<Map<String, dynamic>> get onSoundboardPlayed => _onSoundboardPlayedController.stream;
+  Stream<Map<String, dynamic>> get onSoundboardSynced => _onSoundboardSyncedController.stream;
   Stream<Map<String, dynamic>> get onCallsTrackUpdated => _onCallsTrackUpdatedController.stream;
   Stream<String> get onKicked => _onKickedController.stream;
 
@@ -286,6 +288,10 @@ class SignalingService extends ChangeNotifier {
         _onSoundboardPlayedController.add(data);
         break;
 
+      case 'soundboard-synced':
+        _onSoundboardSyncedController.add(data);
+        break;
+
       case 'calls-track-updated':
         _onCallsTrackUpdatedController.add(data);
         break;
@@ -390,12 +396,27 @@ class SignalingService extends ChangeNotifier {
     }
   }
 
-  void broadcastSoundboardPlay(String soundId, String soundName) {
+  void broadcastSoundboardPlay(String soundId, String soundName, {String? audioData, String? audioFormat}) {
     if (_ws != null && _ws!.readyState == WebSocket.open) {
-      _ws!.add(jsonEncode({
+      final Map<String, dynamic> payload = {
         'type': 'soundboard-play',
         'soundId': soundId,
         'soundName': soundName,
+      };
+      if (audioData != null) payload['audioData'] = audioData;
+      if (audioFormat != null) payload['audioFormat'] = audioFormat;
+      _ws!.add(jsonEncode(payload));
+    }
+  }
+
+  void broadcastSoundboardSync(String soundId, String soundName, String audioData, String audioFormat) {
+    if (_ws != null && _ws!.readyState == WebSocket.open) {
+      _ws!.add(jsonEncode({
+        'type': 'soundboard-sync',
+        'soundId': soundId,
+        'soundName': soundName,
+        'audioData': audioData,
+        'audioFormat': audioFormat,
       }));
     }
   }
@@ -523,6 +544,7 @@ class SignalingService extends ChangeNotifier {
     _onUserStateChangedController.close();
     _onUserSpeakingChangedController.close();
     _onSoundboardPlayedController.close();
+    _onSoundboardSyncedController.close();
     _onCallsTrackUpdatedController.close();
     _onKickedController.close();
     _disconnectWebSocket();

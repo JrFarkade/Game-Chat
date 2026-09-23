@@ -17,7 +17,7 @@ const io = new Server(server, {
   },
   pingTimeout: 30000,
   pingInterval: 10000,
-  maxHttpBufferSize: 1e5, // 100 KB max buffer
+  maxHttpBufferSize: 1e7, // 10 MB max buffer for audio clips
 });
 
 // Default to port 3000 as requested
@@ -177,7 +177,7 @@ io.on('connection', (socket) => {
   });
 
   // 7. Soundboard Play Broadcast
-  socket.on('soundboard-play', ({ soundId, soundName }) => {
+  socket.on('soundboard-play', ({ soundId, soundName, audioData, audioFormat }) => {
     if (!soundId || typeof soundId !== 'string') return;
     for (const [code, room] of roomManager.rooms.entries()) {
       if (room.users.has(socket.id)) {
@@ -188,6 +188,27 @@ io.on('connection', (socket) => {
           senderName: sender.username,
           soundId,
           soundName,
+          audioData,
+          audioFormat,
+          timestamp: Date.now(),
+        });
+        break;
+      }
+    }
+  });
+
+  socket.on('soundboard-sync', ({ soundId, soundName, audioData, audioFormat }) => {
+    if (!soundId || typeof soundId !== 'string') return;
+    for (const [code, room] of roomManager.rooms.entries()) {
+      if (room.users.has(socket.id)) {
+        const sender = room.users.get(socket.id);
+        socket.to(code).emit('soundboard-synced', {
+          senderSocketId: socket.id,
+          senderName: sender.username,
+          soundId,
+          soundName,
+          audioData,
+          audioFormat,
           timestamp: Date.now(),
         });
         break;

@@ -37,9 +37,10 @@ class GameChatApp extends StatelessWidget {
           create: (ctx) => WebRtcService(ctx.read<SignalingService>()),
           update: (ctx, signaling, previous) => previous ?? WebRtcService(signaling),
         ),
-        ChangeNotifierProxyProvider<SignalingService, AudioService>(
-          create: (ctx) => AudioService(ctx.read<SignalingService>()),
-          update: (ctx, signaling, previous) => previous ?? AudioService(signaling),
+        ChangeNotifierProxyProvider2<SignalingService, WebRtcService, AudioService>(
+          create: (ctx) => AudioService(ctx.read<SignalingService>(), ctx.read<WebRtcService>()),
+          update: (ctx, signaling, webrtc, previous) =>
+              (previous ?? AudioService(signaling, webrtc))..updateWebRtc(webrtc),
         ),
       ],
       child: MaterialApp(

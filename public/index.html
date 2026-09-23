@@ -3,46 +3,491 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GameChat Edge Server</title>
+  <title>GameChat — Real-Time Voice Chat for Gaming</title>
+  <meta name="description" content="Low-latency real-time voice chat and soundboard for mobile gaming with friends. Powered by Cloudflare Workers & Durable Objects.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
   <style>
-    body {
-      background: #0e1117;
-      color: #f1f5f9;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      text-align: center;
-      padding: 60px 20px;
+    :root {
+      --bg: #0a0d14;
+      --surface: #121722;
+      --card: #182030;
+      --card-border: #26334d;
+      --primary: #7c4dff;
+      --primary-hover: #651fff;
+      --primary-glow: rgba(124, 77, 255, 0.4);
+      --green: #00e676;
+      --green-glow: rgba(0, 230, 118, 0.25);
+      --text: #f1f5f9;
+      --text-sec: #94a3b8;
+      --text-muted: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
       margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
-    .card {
-      max-width: 500px;
-      margin: 0 auto;
-      background: #161b26;
-      border: 1px solid #2f384c;
-      border-radius: 16px;
-      padding: 32px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 16px;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(124, 77, 255, 0.15) 0%, transparent 60%),
+        radial-gradient(circle at 80% 80%, rgba(0, 230, 118, 0.05) 0%, transparent 50%);
     }
-    h1 { color: #7c4dff; margin-bottom: 8px; font-size: 1.8rem; }
-    .status {
-      display: inline-block;
-      background: rgba(0, 230, 118, 0.15);
-      color: #00e676;
-      font-weight: bold;
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      margin: 40px auto 60px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    /* Header & Hero */
+    header {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-container {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 30%, var(--primary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 230, 118, 0.12);
+      border: 1px solid rgba(0, 230, 118, 0.35);
+      color: var(--green);
+      font-weight: 700;
+      font-size: 0.85rem;
       padding: 6px 16px;
-      border-radius: 20px;
-      margin: 16px 0;
-      border: 1px solid #00e676;
+      border-radius: 999px;
+      box-shadow: 0 0 20px var(--green-glow);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
     }
-    p { color: #94a3b8; font-size: 0.95rem; line-height: 1.5; }
-    .footer { margin-top: 24px; font-size: 0.8rem; color: #64748b; }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(0, 230, 118, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 230, 118, 0); }
+    }
+
+    .tagline {
+      color: var(--text-sec);
+      font-size: 1.15rem;
+      max-width: 580px;
+      line-height: 1.6;
+    }
+
+    /* Download Card */
+    .download-card {
+      background: linear-gradient(180deg, var(--card) 0%, var(--surface) 100%);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 36px 28px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .download-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--primary), transparent);
+    }
+
+    .download-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .download-subtitle {
+      color: var(--text-sec);
+      font-size: 0.95rem;
+      margin-top: -8px;
+    }
+
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+      color: #fff;
+      font-size: 1.15rem;
+      font-weight: 700;
+      padding: 16px 36px;
+      border-radius: 14px;
+      text-decoration: none;
+      box-shadow: 0 8px 24px var(--primary-glow);
+      transition: all 0.25s ease;
+      cursor: pointer;
+      border: none;
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .btn-download:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(124, 77, 255, 0.6);
+      background: linear-gradient(135deg, #8c60ff 0%, var(--primary) 100%);
+    }
+
+    .btn-download:active {
+      transform: translateY(1px);
+    }
+
+    .btn-download svg {
+      width: 24px;
+      height: 24px;
+      fill: currentColor;
+    }
+
+    /* Meta stats under button */
+    .download-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 20px;
+      margin-top: 4px;
+      font-size: 0.85rem;
+      color: var(--text-sec);
+    }
+
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .meta-label { color: var(--text-muted); }
+    .meta-val { color: var(--text); font-weight: 600; }
+
+    /* Features Grid */
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.3px;
+      margin-bottom: 4px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(124, 77, 255, 0.4);
+    }
+
+    .feature-icon {
+      font-size: 1.8rem;
+    }
+
+    .feature-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .feature-desc {
+      color: var(--text-sec);
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+
+    /* Status Panel */
+    .status-panel {
+      background: var(--surface);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .status-item {
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 12px 16px;
+    }
+
+    .status-item-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-item-val {
+      font-size: 0.95rem;
+      color: var(--text);
+      font-weight: 600;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      padding-bottom: 24px;
+      line-height: 1.6;
+    }
+
+    footer a {
+      color: var(--text-sec);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    footer a:hover {
+      color: var(--primary);
+    }
+
+    @media (max-width: 600px) {
+      .logo-container { font-size: 2rem; }
+      .container { margin: 24px auto 40px; }
+      .download-card { padding: 28px 18px; }
+      .btn-download { font-size: 1rem; padding: 14px 24px; }
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>🎮 GameChat Edge Server</h1>
-    <div class="status">🟢 ONLINE & READY</div>
-    <p>Cloudflare Workers & Durable Objects Real-time Voice Chat Backend</p>
-    <div class="footer">GameChat v2.0 • Edge WebRTC Signaling Active</div>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="logo-container">
+        <span>🎮</span>
+        <span>GAMECHAT</span>
+      </div>
+      <div class="status-badge" id="edgeStatusBadge">
+        <span class="status-dot"></span>
+        <span id="edgeStatusText">ONLINE & READY</span>
+      </div>
+      <p class="tagline">
+        Real-time voice chat & synced soundboard built for mobile gamers. Powered by Cloudflare Workers & Durable Objects.
+      </p>
+    </header>
+
+    <!-- Download Hero Card -->
+    <section class="download-card">
+      <h2 class="download-title">Download GameChat for Android</h2>
+      <p class="download-subtitle">Get the latest production release with background gaming audio support.</p>
+      
+      <a href="/download" class="btn-download" id="downloadBtn">
+        <svg viewBox="0 0 24 24">
+          <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+        </svg>
+        <span>DOWNLOAD LATEST APK</span>
+      </a>
+
+      <div class="download-meta">
+        <div class="meta-item">
+          <span class="meta-label">Version:</span>
+          <span class="meta-val" id="metaVersion">v2.0.0</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Platform:</span>
+          <span class="meta-val">Android 7.0+</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Size:</span>
+          <span class="meta-val" id="metaSize">91.2 MB</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Updated:</span>
+          <span class="meta-val" id="metaDate">Sep 2026</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section>
+      <h3 class="section-title">GameChat Features</h3>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🎙️</div>
+          <div class="feature-name">Real-Time Voice Chat</div>
+          <div class="feature-desc">48kHz crystal clear audio with hardware echo cancellation, noise suppression, and automatic gain control.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔊</div>
+          <div class="feature-name">Synchronized Soundboard</div>
+          <div class="feature-desc">28 built-in gaming sound effects trigger with instant sub-30ms edge synchronization across all peers.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">👥</div>
+          <div class="feature-name">Room-Based Gaming</div>
+          <div class="feature-desc">Instant 5-letter room codes. Share with your squad to jump straight into voice without accounts or phone numbers.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🎮</div>
+          <div class="feature-name">Background Voice Support</div>
+          <div class="feature-desc">Native Android foreground service keeps your microphone live while playing BGMI, COD Mobile, or Free Fire.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <div class="feature-name">Automatic Reconnection</div>
+          <div class="feature-desc">Automatic 15-second carrier NAT keepalive pings and seamless exponential backoff reconnect.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <div class="feature-name">Edge-Powered</div>
+          <div class="feature-desc">Runs globally on Cloudflare Workers and SQLite Durable Objects. Your laptop does not need to stay online.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Server Status Panel -->
+    <section class="status-panel">
+      <h3 class="section-title">Current Server Status</h3>
+      <div class="status-grid">
+        <div class="status-item">
+          <div class="status-item-label">Edge Backend</div>
+          <div class="status-item-val">
+            <span style="color: var(--green);">●</span> Cloudflare Workers
+          </div>
+        </div>
+        <div class="status-item">
+          <div class="status-item-label">Room System</div>
+          <div class="status-item-val">SQLite Durable Objects</div>
+        </div>
+        <div class="status-item">
+          <div class="status-item-label">Voice Signaling</div>
+          <div class="status-item-val">WebRTC + Anycast STUN</div>
+        </div>
+        <div class="status-item">
+          <div class="status-item-label">Edge Latency</div>
+          <div class="status-item-val" id="latencyVal">Measuring...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <p>GameChat v2.0 • Edge WebRTC Signaling Active • Zero-Laptop Deployment</p>
+      <p style="margin-top: 6px;">
+        <a href="https://github.com/JrFarkade/Game-Chat" target="_blank" rel="noopener">GitHub Repository</a> • 
+        <a href="/api/latest" target="_blank">Latest API Metadata</a> • 
+        <a href="/health" target="_blank">Health Check</a>
+      </p>
+    </footer>
   </div>
+
+  <script>
+    // 1. Fetch live latest release metadata
+    async function loadLatestMetadata() {
+      try {
+        const res = await fetch('/api/latest');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.version) {
+            document.getElementById('metaVersion').textContent = 'v' + data.version;
+          }
+          if (data.sizeFormatted) {
+            document.getElementById('metaSize').textContent = data.sizeFormatted;
+          }
+          if (data.releaseDate) {
+            document.getElementById('metaDate').textContent = data.releaseDate;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load latest metadata dynamically:', err);
+      }
+    }
+
+    // 2. Measure live Cloudflare edge round-trip latency
+    async function measureLatency() {
+      const start = performance.now();
+      try {
+        const res = await fetch('/health?t=' + Date.now());
+        const duration = Math.round(performance.now() - start);
+        if (res.ok) {
+          document.getElementById('latencyVal').textContent = '⚡ ' + duration + ' ms';
+          document.getElementById('edgeStatusText').textContent = 'ONLINE & READY';
+        } else {
+          document.getElementById('latencyVal').textContent = '⚠️ ' + duration + ' ms';
+        }
+      } catch (err) {
+        document.getElementById('latencyVal').textContent = 'Offline';
+        document.getElementById('edgeStatusText').textContent = 'RECONNECTING';
+      }
+    }
+
+    loadLatestMetadata();
+    measureLatency();
+    setInterval(measureLatency, 30000);
+  </script>
 </body>
 </html>

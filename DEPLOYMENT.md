@@ -1,4 +1,4 @@
-﻿# GameChat — Cloudflare Serverless Deployment Guide
+# GameChat — Cloudflare Serverless Deployment Guide
 
 This guide walks you through deploying the **GameChat** backend to Cloudflare Workers, Durable Objects, and Cloudflare Realtime (Calls SFU), so that the application runs 24/7 on Cloudflare edge servers with **zero dependency on your laptop remaining on**.
 
@@ -128,34 +128,35 @@ To deploy automatically every time you `git push`:
 
 ```dart
 class AppConstants {
-  // Replace with your actual live Worker URL:
-  static const String defaultServerUrl = 'https://gamechat-backend.<your-subdomain>.workers.dev';
+  // Production Cloudflare Worker URL:
+  static const String defaultServerUrl = 'https://game-chat.jrfarkade.workers.dev';
   ...
 }
 ```
 
-Alternatively, you can also change or test the URL directly inside the app under **Settings -> SERVER & NETWORK CONNECTION**.
-
 ---
 
-## Step 7: Build the Release Android APK
+## Step 7: Landing Page & Automated APK Download
 
-From the root of the project:
+GameChat now provides an automated distribution portal directly at your production Worker URL:
 
-```bash
-cd mobile
-flutter clean
-flutter pub get
-flutter build apk --release
-```
+- **Web Landing Page:** [`https://game-chat.jrfarkade.workers.dev/`](https://game-chat.jrfarkade.workers.dev/)
+  - Real-time gaming dark-mode UI with live edge server ping.
+  - Prominent **[ DOWNLOAD LATEST APK ]** button.
+  - Dynamic metadata display (version, size, release date).
+- **Direct APK Download:** [`https://game-chat.jrfarkade.workers.dev/download`](https://game-chat.jrfarkade.workers.dev/download)
+  - Always downloads the newest production APK (`application/vnd.android.package-archive`).
+- **Update Metadata API:** [`https://game-chat.jrfarkade.workers.dev/api/latest`](https://game-chat.jrfarkade.workers.dev/api/latest)
+  - Returns JSON metadata with current version, file size, and download URLs.
 
-The compiled APK will be generated at:
-
-```text
-mobile/build/app/outputs/flutter-apk/app-release.apk
-```
-
-Rename and distribute this APK to your friends.
+### Optional: Cloudflare R2 Storage (Zero-Egress Hosting)
+For direct edge-hosted APK downloads without GitHub redirects:
+1. In Cloudflare Dashboard, go to **R2 Object Storage**.
+2. Click **Create bucket** and name it `gamechat-releases`.
+3. In GitHub Repository (**Settings > Secrets and variables > Actions**), add:
+   - `CLOUDFLARE_API_TOKEN` (API token with R2 and Workers permissions)
+   - `CLOUDFLARE_ACCOUNT_ID` (`dec7061d171b2c48ce510dd4f1e39728`)
+4. Any push to `main` with mobile changes will automatically build the APK and upload it directly to R2 and GitHub Releases via `.github/workflows/release-apk.yml`.
 
 ---
 

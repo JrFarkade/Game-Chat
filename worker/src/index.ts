@@ -1,4 +1,4 @@
-﻿import { Env } from './types';
+import { Env } from './types';
 export { RoomDurableObject } from './room_do';
 
 const CORS_HEADERS = {
@@ -26,6 +26,12 @@ function generateRoomCode(): string {
   return code;
 }
 
+const CURRENT_VERSION = '2.0.0';
+const CURRENT_APK_FILENAME = `GameChat-v${CURRENT_VERSION}.apk`;
+const GITHUB_REPO = 'JrFarkade/Game-Chat';
+const GITHUB_RELEASE_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/${CURRENT_APK_FILENAME}`;
+const APPROX_APK_SIZE = 95630336; // ~91.2 MB
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -35,15 +41,85 @@ export default {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
-    // Health check & root status
-    if (url.pathname === '/' || url.pathname === '/health') {
+    // API: Latest APK metadata for update checking
+    if (url.pathname === '/api/latest') {
+      return jsonResponse({
+        version: CURRENT_VERSION,
+        filename: CURRENT_APK_FILENAME,
+        downloadUrl: '/download',
+        githubDownloadUrl: GITHUB_RELEASE_DOWNLOAD_URL,
+        platform: 'Android',
+        minAndroidVersion: '7.0 (API 24)',
+        size: APPROX_APK_SIZE,
+        sizeFormatted: '91.2 MB',
+        releaseDate: '2026-09-23',
+        releaseNotes: 'Production release with Cloudflare Workers backend, Durable Objects signaling, Anycast STUN, and background gaming voice support.',
+        r2Available: !!env.APK_BUCKET,
+      });
+    }
+
+    // Download route: /download or /downloads/:filename
+    if (url.pathname === '/download' || url.pathname.startsWith('/downloads')) {
+      const requestedFile = url.pathname.startsWith('/downloads/')
+        ? url.pathname.replace('/downloads/', '').trim()
+        : CURRENT_APK_FILENAME;
+
+      // 1. Try Cloudflare R2 bucket if configured
+      if (env.APK_BUCKET) {
+        try {
+          const object =
+            (await env.APK_BUCKET.get(requestedFile)) ||
+            (await env.APK_BUCKET.get(CURRENT_APK_FILENAME)) ||
+            (await env.APK_BUCKET.get('latest.apk'));
+
+          if (object) {
+            const headers = new Headers();
+            object.writeHttpMetadata(headers);
+            headers.set('Content-Type', 'application/vnd.android.package-archive');
+            headers.set('Content-Disposition', `attachment; filename="${CURRENT_APK_FILENAME}"`);
+            headers.set('Cache-Control', 'public, max-age=3600');
+            if (object.httpEtag) headers.set('etag', object.httpEtag);
+            return new Response(object.body, { headers });
+          }
+        } catch (err) {
+          console.error('[R2] Error retrieving APK:', err);
+        }
+      }
+
+      // 2. Fallback to GitHub Releases download
+      return Response.redirect(GITHUB_RELEASE_DOWNLOAD_URL, 302);
+    }
+
+    // Health check endpoint
+    if (url.pathname === '/health') {
       return jsonResponse({
         status: 'online',
         service: 'GameChat Cloudflare Edge Backend',
         environment: env.ENVIRONMENT || 'production',
         callsConfigured: !!(env.CALLS_APP_ID && env.CALLS_APP_SECRET),
+        r2Configured: !!env.APK_BUCKET,
+        latestVersion: CURRENT_VERSION,
         timestamp: new Date().toISOString(),
       });
+    }
+
+    // Root path: Landing page (HTML) or JSON status
+    if (url.pathname === '/') {
+      const accept = request.headers.get('Accept') || '';
+      if (accept.includes('application/json')) {
+        return jsonResponse({
+          status: 'online',
+          service: 'GameChat Cloudflare Edge Backend',
+          environment: env.ENVIRONMENT || 'production',
+          callsConfigured: !!(env.CALLS_APP_ID && env.CALLS_APP_SECRET),
+          r2Configured: !!env.APK_BUCKET,
+          latestVersion: CURRENT_VERSION,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      if (env.ASSETS) {
+        return env.ASSETS.fetch(request);
+      }
     }
 
     // ICE servers configuration (Cloudflare Realtime STUN + Google STUN)

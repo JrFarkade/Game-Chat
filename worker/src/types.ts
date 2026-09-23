@@ -3,6 +3,8 @@ export interface Env {
   CALLS_APP_ID?: string;
   CALLS_APP_SECRET?: string;
   ENVIRONMENT?: string;
+  APK_BUCKET?: R2Bucket;
+  ASSETS?: Fetcher;
 }
 
 export interface UserPeer {
@@ -36,7 +38,8 @@ export type SignalingClientMessage =
   | { type: 'ice-candidate'; targetUserId: string; candidate: any }
   | { type: 'state-change'; isMuted: boolean; isDeafened: boolean }
   | { type: 'speaking-change'; isSpeaking: boolean }
-  | { type: 'soundboard-play'; soundId: string; soundName: string }
+  | { type: 'soundboard-play'; soundId: string; soundName: string; audioData?: string; audioFormat?: string }
+  | { type: 'soundboard-sync'; soundId: string; soundName: string; audioData?: string; audioFormat?: string }
   | { type: 'calls-track-published'; callsSessionId: string; callsAudioTrackName: string }
   | { type: 'kick-user'; targetUserId: string }
   | { type: 'leave-room' }
@@ -51,7 +54,8 @@ export type SignalingServerMessage =
   | { type: 'ice-candidate'; senderSocketId: string; candidate: any }
   | { type: 'user-state-changed'; userId: string; isMuted: boolean; isDeafened: boolean }
   | { type: 'user-speaking-changed'; userId: string; isSpeaking: boolean }
-  | { type: 'soundboard-played'; senderId: string; senderName: string; soundId: string; soundName: string; timestamp: number }
+  | { type: 'soundboard-played'; senderId: string; senderName: string; soundId: string; soundName: string; audioData?: string; audioFormat?: string; timestamp: number }
+  | { type: 'soundboard-synced'; senderId: string; senderName: string; soundId: string; soundName: string; audioData?: string; audioFormat?: string; timestamp: number }
   | { type: 'calls-track-updated'; userId: string; callsSessionId: string; callsAudioTrackName: string }
   | { type: 'kicked-from-room'; reason: string }
   | { type: 'error'; message: string }

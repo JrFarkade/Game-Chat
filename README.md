@@ -1,4 +1,4 @@
-﻿# GameChat — Cloudflare Serverless Voice Chat Android App
+# GameChat — Cloudflare Serverless Voice Chat Android App
 
 A private, ultra low-latency real-time voice chat Android application designed specifically for mobile gamers playing games together with friends (BGMI, COD Mobile, Free Fire, etc.).
 
@@ -8,6 +8,12 @@ Powered by:
 - **Cloudflare Realtime SFU (Calls API)**: Edge-accelerated WebRTC audio fanout across 335+ Anycast locations.
 - **Flutter (Android)**: Tactical gaming UI with native Kotlin `VoiceForegroundService`.
 - **Zero Laptop Dependency**: Completely serverless. Runs 24/7 on Cloudflare's global edge network with your laptop **turned off**.
+
+### 🔗 Live Production Links
+- **Official Web Portal & Landing Page:** [https://game-chat.jrfarkade.workers.dev/](https://game-chat.jrfarkade.workers.dev/)
+- **Direct APK Download:** [https://game-chat.jrfarkade.workers.dev/download](https://game-chat.jrfarkade.workers.dev/download)
+- **Latest Metadata API:** [https://game-chat.jrfarkade.workers.dev/api/latest](https://game-chat.jrfarkade.workers.dev/api/latest)
+- **Health Check:** [https://game-chat.jrfarkade.workers.dev/health](https://game-chat.jrfarkade.workers.dev/health)
 
 ---
 
